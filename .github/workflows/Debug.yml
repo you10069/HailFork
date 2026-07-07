@@ -1,4 +1,4 @@
-name: Android Manual Debug Build
+name: Debug Build
 
 on:
   workflow_dispatch:
