@@ -1,0 +1,42 @@
+name: Debug Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build Debug APK
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:assembleDebug
+          APK_PATH=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "APK_NAME=$(basename "$APK_PATH" .apk)" >> $GITHUB_ENV
+
+      - name: Set TAG_DATE
+        run: echo "TAG_DATE=$(date +%Y%m%d%H%M)" >> $GITHUB_ENV
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ env.APK_NAME }}-${{ env.TAG_DATE }}
+          name: ${{ env.APK_NAME }}-${{ env.TAG_DATE }}
+          files: ${{ env.APK_PATH }}
+          draft: false
+          prerelease: true
+          make_latest: false
+
+
