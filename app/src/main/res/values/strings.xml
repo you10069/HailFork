@@ -70,6 +70,9 @@
     <string name="sort_name">Name</string>
     <string name="sort_install">First install</string>
     <string name="sort_update">Last update</string>
+    <string name="action_manual_sort">Manual sort</string>
+    <string name="action_manual_sort_done">Done sorting</string>
+    <string name="msg_drag_to_sort">Long press and drag apps to reorder.</string>
     <string name="title_donate">Thank you!</string>
     <string name="donate_alipay">Alipay</string>
     <string name="donate_wechat">WeChat Pay</string>

@@ -28,6 +28,7 @@ import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.aistra.hail.HailApp.Companion.app
 import com.aistra.hail.R
@@ -53,11 +54,14 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 
 class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAdapter.OnItemLongClickListener,
-    MenuProvider {
+    PagerAdapter.OnStartDragListener, MenuProvider {
     private var query: String = String()
+    private var manualSort: Boolean = false
+    private var manualSortItem: MenuItem? = null
     private var _binding: FragmentPagerBinding? = null
     private val binding get() = _binding!!
     private lateinit var pagerAdapter: PagerAdapter
+    private var itemTouchHelper: ItemTouchHelper? = null
     private var multiselect: Boolean
         set(value) {
             (parentFragment as HomeFragment).multiselect = value
@@ -76,6 +80,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         pagerAdapter = PagerAdapter(selectedList).apply {
             onItemClickListener = this@PagerFragment
             onItemLongClickListener = this@PagerFragment
+            onStartDragListener = this@PagerFragment
         }
         binding.recyclerView.run {
             layoutManager = GridLayoutManager(
@@ -97,7 +102,44 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 }
             })
             applyDefaultInsetter { paddingRelative(isRtl, bottom = isLandscape) }
+            itemTouchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+                ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.START or ItemTouchHelper.END, 0
+            ) {
+                override fun isLongPressDragEnabled(): Boolean = false
 
+                override fun isItemViewSwipeEnabled(): Boolean = false
+
+                override fun canDropOver(
+                    recyclerView: RecyclerView,
+                    current: RecyclerView.ViewHolder,
+                    target: RecyclerView.ViewHolder
+                ): Boolean {
+                    val currentApp = pagerAdapter.currentList.getOrNull(current.bindingAdapterPosition)
+                    val targetApp = pagerAdapter.currentList.getOrNull(target.bindingAdapterPosition)
+                    return manualSort && currentApp != null && currentApp.pinned == targetApp?.pinned
+                }
+
+                override fun onMove(
+                    recyclerView: RecyclerView,
+                    viewHolder: RecyclerView.ViewHolder,
+                    target: RecyclerView.ViewHolder
+                ): Boolean {
+                    val from = viewHolder.bindingAdapterPosition
+                    val to = target.bindingAdapterPosition
+                    if (!manualSort || from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) return false
+                    val fromApp = pagerAdapter.currentList.getOrNull(from)
+                    val toApp = pagerAdapter.currentList.getOrNull(to)
+                    if (fromApp == null || fromApp.pinned != toApp?.pinned) return false
+                    return pagerAdapter.moveItem(from, to)
+                }
+
+                override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
+
+                override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                    super.clearView(recyclerView, viewHolder)
+                    if (manualSort) HailData.reorderCheckedApps(pagerAdapter.currentList)
+                }
+            }).also { it.attachToRecyclerView(this) }
         }
 
         binding.refresh.apply {
@@ -135,7 +177,10 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         )) || FuzzySearch.search(it.packageName, query) || FuzzySearch.search(
             it.name.toString(), query
         ) || PinyinSearch.searchPinyinAll(it.name.toString(), query))
-    }.sortedWith(NameComparator).let {
+    }.run {
+        if (HailData.manualHomeOrder) sortedWith(compareBy { if (it.pinned) 0 else 1 })
+        else sortedWith(NameComparator)
+    }.let {
         binding.empty.isVisible = it.isEmpty()
         pagerAdapter.submitList(it)
         app.setAutoFreezeService()
@@ -148,6 +193,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     }
 
     override fun onItemClick(info: AppInfo) {
+        if (manualSort) return
         if (multiselect) {
             if (info in selectedList) selectedList.remove(info)
             else selectedList.add(info)
@@ -164,6 +210,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     }
 
     override fun onItemLongClick(info: AppInfo): Boolean {
+        if (manualSort) return true
         if (info.applicationInfo == null && (!multiselect || info !in selectedList)) {
             exportToClipboard(listOf(info))
             return true
@@ -536,16 +583,45 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         if (saveApps) updateCurrentList()
     }
 
+    override fun onStartDrag(viewHolder: RecyclerView.ViewHolder) {
+        itemTouchHelper?.startDrag(viewHolder)
+    }
+
+    private fun setManualSort(enabled: Boolean) {
+        manualSort = enabled
+        pagerAdapter.manualSort = enabled
+        manualSortItem?.run {
+            title = getString(if (enabled) R.string.action_manual_sort_done else R.string.action_manual_sort)
+            updateIcon()
+        }
+        binding.refresh.isEnabled = !enabled
+        if (enabled) {
+            if (multiselect) {
+                multiselect = false
+                selectedList.clear()
+                updateBarTitle()
+            }
+            HUI.showToast(R.string.msg_drag_to_sort)
+        } else {
+            HailData.reorderCheckedApps(pagerAdapter.currentList)
+            updateCurrentList()
+        }
+        pagerAdapter.notifyItemRangeChanged(0, pagerAdapter.itemCount)
+    }
+
     private fun MenuItem.updateIcon() = icon?.setTint(
         MaterialColors.getColor(
             activity.findViewById(R.id.toolbar),
-            if (multiselect) androidx.appcompat.R.attr.colorPrimary else com.google.android.material.R.attr.colorOnSurface
+            if ((itemId == R.id.action_multiselect && multiselect) || (itemId == R.id.action_manual_sort && manualSort))
+                androidx.appcompat.R.attr.colorPrimary
+            else com.google.android.material.R.attr.colorOnSurface
         )
     )
 
     override fun onMenuItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
             R.id.action_multiselect -> {
+                if (manualSort) setManualSort(false)
                 multiselect = !multiselect
                 item.updateIcon()
                 if (multiselect) {
@@ -553,6 +629,8 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                     HUI.showToast(R.string.tap_to_select)
                 } else deselect()
             }
+
+            R.id.action_manual_sort -> setManualSort(!manualSort)
 
             R.id.action_freeze_current -> setListFrozen(true, pagerAdapter.currentList.filterNot { it.whitelisted })
 
@@ -579,6 +657,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
 
     override fun onCreateMenu(menu: Menu, inflater: MenuInflater) {
         inflater.inflate(R.menu.menu_home, menu)
+        manualSortItem = menu.findItem(R.id.action_manual_sort)
         val searchView = menu.findItem(R.id.action_search).actionView as SearchView
         if (HailData.nineKeySearch) {
             val editText = searchView.findViewById<EditText>(androidx.appcompat.R.id.search_src_text)
@@ -588,6 +667,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             private var inited = false
             override fun onQueryTextChange(newText: String): Boolean {
                 if (inited) {
+                    if (manualSort) setManualSort(false)
                     query = newText
                     tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
                     updateCurrentList()
@@ -598,9 +678,16 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             override fun onQueryTextSubmit(query: String): Boolean = true
         })
         menu.findItem(R.id.action_multiselect).updateIcon()
+        manualSortItem?.run {
+            title = getString(if (manualSort) R.string.action_manual_sort_done else R.string.action_manual_sort)
+            updateIcon()
+        }
     }
 
     override fun onDestroyView() {
+        if (manualSort) HailData.reorderCheckedApps(pagerAdapter.currentList)
+        itemTouchHelper?.attachToRecyclerView(null)
+        manualSortItem = null
         pagerAdapter.onDestroy()
         super.onDestroyView()
         _binding = null

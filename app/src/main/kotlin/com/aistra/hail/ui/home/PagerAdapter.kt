@@ -7,7 +7,6 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.aistra.hail.R
 import com.aistra.hail.app.AppInfo
@@ -20,21 +19,34 @@ import kotlinx.coroutines.Job
 class PagerAdapter(
     private val selectedList: List<AppInfo>,
     private val flags: MutableMap<String, Int> = mutableMapOf()
-) : ListAdapter<AppInfo, PagerAdapter.ViewHolder>(HomeDiff(selectedList, flags)) {
+) : RecyclerView.Adapter<PagerAdapter.ViewHolder>() {
+    private val items = mutableListOf<AppInfo>()
+    val currentList: List<AppInfo> get() = items
     private var loadIconJob: Job? = null
+    var manualSort: Boolean = false
     lateinit var onItemClickListener: OnItemClickListener
     lateinit var onItemLongClickListener: OnItemLongClickListener
+    lateinit var onStartDragListener: OnStartDragListener
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder = ViewHolder(
         LayoutInflater.from(parent.context).inflate(R.layout.item_home, parent, false)
     )
 
+    override fun getItemCount(): Int = items.size
+
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val info = currentList[position]
+        val info = items[position]
         flags[info.packageName] = info.getFlag(selectedList)
         holder.itemView.run {
-            setOnClickListener { onItemClickListener.onItemClick(info) }
-            setOnLongClickListener { onItemLongClickListener.onItemLongClick(info) }
+            setOnClickListener {
+                if (!manualSort) onItemClickListener.onItemClick(info)
+            }
+            setOnLongClickListener {
+                if (manualSort) {
+                    onStartDragListener.onStartDrag(holder)
+                    true
+                } else onItemLongClickListener.onItemLongClick(info)
+            }
             findViewById<ImageView>(R.id.app_icon).run {
                 info.applicationInfo?.let {
                     loadIconJob = AppIconCache.loadIconBitmapAsync(
@@ -72,17 +84,42 @@ class PagerAdapter(
         }
     }
 
+    fun submitList(list: List<AppInfo>) {
+        val oldItems = items.toList()
+        val oldFlags = flags.toMap()
+        val diff = DiffUtil.calculateDiff(HomeDiff(oldItems, list, selectedList, oldFlags))
+        items.clear()
+        items.addAll(list)
+        diff.dispatchUpdatesTo(this)
+    }
+
+    fun moveItem(fromPosition: Int, toPosition: Int): Boolean {
+        if (fromPosition !in items.indices || toPosition !in items.indices) return false
+        val item = items.removeAt(fromPosition)
+        items.add(toPosition, item)
+        notifyItemMoved(fromPosition, toPosition)
+        return true
+    }
+
     fun onDestroy() {
         if (loadIconJob?.isActive == true) loadIconJob?.cancel()
     }
 
     private class HomeDiff(
-        private val selectedList: List<AppInfo>, private val flags: Map<String, Int>
-    ) : DiffUtil.ItemCallback<AppInfo>() {
-        override fun areItemsTheSame(oldItem: AppInfo, newItem: AppInfo): Boolean = oldItem == newItem
+        private val oldItems: List<AppInfo>,
+        private val newItems: List<AppInfo>,
+        private val selectedList: List<AppInfo>,
+        private val oldFlags: Map<String, Int>
+    ) : DiffUtil.Callback() {
+        override fun getOldListSize(): Int = oldItems.size
 
-        override fun areContentsTheSame(oldItem: AppInfo, newItem: AppInfo): Boolean =
-            flags[oldItem.packageName] == newItem.getFlag(selectedList)
+        override fun getNewListSize(): Int = newItems.size
+
+        override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+            oldItems[oldItemPosition] == newItems[newItemPosition]
+
+        override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+            oldFlags[oldItems[oldItemPosition].packageName] == newItems[newItemPosition].getFlag(selectedList)
     }
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view)
@@ -93,6 +130,10 @@ class PagerAdapter(
 
     interface OnItemLongClickListener {
         fun onItemLongClick(info: AppInfo): Boolean
+    }
+
+    interface OnStartDragListener {
+        fun onStartDrag(viewHolder: RecyclerView.ViewHolder)
     }
 }
 

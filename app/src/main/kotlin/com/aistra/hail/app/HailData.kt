@@ -32,6 +32,7 @@ object HailData {
     const val KEY_PACKAGE = "package"
     const val KEY_FROZEN = "frozen"
     private const val SORT_BY = "sort_by"
+    private const val MANUAL_HOME_ORDER = "manual_home_order"
     const val SORT_NAME = "name"
     const val SORT_INSTALL = "install"
     const val SORT_UPDATE = "update"
@@ -132,6 +133,7 @@ object HailData {
 
     private val sp = PreferenceManager.getDefaultSharedPreferences(app)
     val sortBy get() = sp.getString(SORT_BY, SORT_NAME)
+    val manualHomeOrder get() = sp.getBoolean(MANUAL_HOME_ORDER, false)
     val filterUserApps get() = sp.getBoolean(FILTER_USER_APPS, true)
     val filterSystemApps get() = sp.getBoolean(FILTER_SYSTEM_APPS, false)
     val filterFrozenApps get() = sp.getBoolean(FILTER_FROZEN_APPS, true)
@@ -190,6 +192,26 @@ object HailData {
     fun removeCheckedApp(packageName: String, saveApps: Boolean = true) {
         checkedList.removeAll { it.packageName == packageName }
         if (saveApps) saveApps()
+    }
+
+    fun reorderCheckedApps(orderedApps: List<AppInfo>) {
+        if (orderedApps.isEmpty()) return
+        val orderedPackages = orderedApps.map { it.packageName }
+        val orderedPackageSet = orderedPackages.toSet()
+        val currentApps = checkedList.toList()
+        val insertIndex = currentApps.indexOfFirst { it.packageName in orderedPackageSet }
+            .let { if (it == -1) checkedList.size else it }
+        val remainingApps = currentApps.filterNot { it.packageName in orderedPackageSet }
+        val appsByPackage = currentApps.associateBy { it.packageName }
+        val reorderedApps = orderedPackages.mapNotNull { appsByPackage[it] }
+        val safeInsertIndex = insertIndex.coerceAtMost(remainingApps.size)
+
+        checkedList.clear()
+        checkedList.addAll(remainingApps.take(safeInsertIndex))
+        checkedList.addAll(reorderedApps)
+        checkedList.addAll(remainingApps.drop(safeInsertIndex))
+        sp.edit { putBoolean(MANUAL_HOME_ORDER, true) }
+        saveApps()
     }
 
     fun saveApps() {
