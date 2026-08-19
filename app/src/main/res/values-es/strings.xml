@@ -154,5 +154,4 @@
     <string name="follow_system">Seguir el sistema</string>
     <string name="theme_light">Claro</string>
     <string name="theme_dark">Oscuro</string>
-    <string name="xposed_description">Descongela automáticamente las aplicaciones suspendidas para aplicaciones con ámbito limitado</string>
 </resources>
