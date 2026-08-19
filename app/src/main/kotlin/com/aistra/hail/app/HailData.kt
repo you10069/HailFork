@@ -199,17 +199,14 @@ object HailData {
         val orderedPackages = orderedApps.map { it.packageName }
         val orderedPackageSet = orderedPackages.toSet()
         val currentApps = checkedList.toList()
-        val insertIndex = currentApps.indexOfFirst { it.packageName in orderedPackageSet }
-            .let { if (it == -1) checkedList.size else it }
-        val remainingApps = currentApps.filterNot { it.packageName in orderedPackageSet }
         val appsByPackage = currentApps.associateBy { it.packageName }
-        val reorderedApps = orderedPackages.mapNotNull { appsByPackage[it] }
-        val safeInsertIndex = insertIndex.coerceAtMost(remainingApps.size)
+        val reorderedApps = orderedPackages.mapNotNull { appsByPackage[it] }.iterator()
 
-        checkedList.clear()
-        checkedList.addAll(remainingApps.take(safeInsertIndex))
-        checkedList.addAll(reorderedApps)
-        checkedList.addAll(remainingApps.drop(safeInsertIndex))
+        checkedList.indices.forEach { index ->
+            if (checkedList[index].packageName in orderedPackageSet && reorderedApps.hasNext()) {
+                checkedList[index] = reorderedApps.next()
+            }
+        }
         sp.edit { putBoolean(MANUAL_HOME_ORDER, true) }
         saveApps()
     }
