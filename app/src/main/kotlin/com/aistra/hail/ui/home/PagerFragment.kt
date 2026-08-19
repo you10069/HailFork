@@ -29,6 +29,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.aistra.hail.HailApp.Companion.app
 import com.aistra.hail.R
@@ -490,6 +491,52 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         }
     }
 
+    private fun showTagSortDialog() {
+        if (HailData.tags.size <= 1) return
+        val selectedTagId = tag.second
+        val tagSortAdapter = TagSortAdapter(HailData.tags)
+        val recyclerView = RecyclerView(activity).apply {
+            layoutManager = LinearLayoutManager(activity)
+            adapter = tagSortAdapter
+        }
+        ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
+            override fun getMovementFlags(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder
+            ): Int = makeMovementFlags(
+                if (viewHolder.bindingAdapterPosition > 0) ItemTouchHelper.UP or ItemTouchHelper.DOWN else 0,
+                0
+            )
+
+            override fun canDropOver(
+                recyclerView: RecyclerView,
+                current: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean = current.bindingAdapterPosition > 0 && target.bindingAdapterPosition > 0
+
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean = tagSortAdapter.moveItem(
+                viewHolder.bindingAdapterPosition,
+                target.bindingAdapterPosition
+            )
+
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
+        }).attachToRecyclerView(recyclerView)
+
+        MaterialAlertDialogBuilder(activity)
+            .setTitle(R.string.action_tag_sort)
+            .setMessage(R.string.msg_drag_tags_to_sort)
+            .setView(recyclerView)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                (parentFragment as HomeFragment).reorderTags(tagSortAdapter.currentList, selectedTagId)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     private fun showTagDialog(list: List<AppInfo>? = null) {
         val binding = DialogInputBinding.inflate(layoutInflater)
         binding.inputLayout.setHint(R.string.tag)
@@ -631,6 +678,10 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             }
 
             R.id.action_manual_sort -> setManualSort(!manualSort)
+            R.id.action_tag_sort -> {
+                if (manualSort) setManualSort(false)
+                showTagSortDialog()
+            }
 
             R.id.action_freeze_current -> setListFrozen(true, pagerAdapter.currentList.filterNot { it.whitelisted })
 

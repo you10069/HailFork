@@ -157,4 +157,6 @@
     <string name="theme_dark">深色</string>
     <string name="app_theme">应用主题</string>
     <string name="follow_system">跟随系统</string>
+    <string name="action_tag_sort">标签排序</string>
+    <string name="msg_drag_tags_to_sort">长按并拖动标签调整顺序。默认标签固定在第一位。</string>
 </resources>

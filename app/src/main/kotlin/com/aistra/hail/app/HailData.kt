@@ -240,6 +240,15 @@ object HailData {
         }
     }
 
+    fun reorderTags(orderedTags: List<Pair<String, Int>>): Boolean {
+        val reorderedTags = normalizeTagOrder(tags, orderedTags)
+        if (reorderedTags == tags) return false
+        tags.clear()
+        tags.addAll(reorderedTags)
+        saveTags()
+        return true
+    }
+
     fun saveTags() {
         if (!HFiles.exists(dir)) HFiles.createDirectories(dir)
         HFiles.write(tagsPath, JSONArray().run {

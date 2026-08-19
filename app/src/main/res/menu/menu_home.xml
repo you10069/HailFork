@@ -19,6 +19,11 @@
             android:icon="@drawable/ic_outline_sort"
             android:title="@string/action_manual_sort"
             app:showAsAction="ifRoom"/>
+    <item
+            android:id="@+id/action_tag_sort"
+            android:icon="@drawable/ic_outline_sort"
+            android:title="@string/action_tag_sort"
+            app:showAsAction="never"/>
     <group android:id="@+id/group_freeze_current">
         <item
                 android:id="@+id/action_freeze_current"
